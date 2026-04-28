@@ -74,20 +74,9 @@ func LoadTestWorkflow(ctx workflow.Context, req RunRequest) (string, error) {
 	logger.Info("Stream processed successfully", "runID", req.RunID, "chunkCount", len(chunks))
 
 	// ============================================
-	// Step 4: Write Chunks to Log File
+	// Step 4: Extract Metrics from Log File
 	// ============================================
-	logger.Info("Step 4: Writing chunks to log file", "runID", req.RunID)
-	err = workflow.ExecuteActivity(ctx, ActivityWriteToLogFile, req.RunID, chunks).Get(ctx, nil)
-	if err != nil {
-		logger.Error("Failed to write to log file", "error", err)
-		_ = workflow.ExecuteActivity(ctx, ActivityUpdateRunStatus, req.RunID, "failed_log_write").Get(ctx, nil)
-		return "", err
-	}
-
-	// ============================================
-	// Step 5: Extract Metrics from Log File
-	// ============================================
-	logger.Info("Step 5: Extracting metrics from log file", "runID", req.RunID)
+	logger.Info("Step 4: Extracting metrics from log file", "runID", req.RunID)
 	var metrics []Metric
 	err = workflow.ExecuteActivity(ctx, ActivityExtractMetrics, req.RunID).Get(ctx, &metrics)
 	if err != nil {
@@ -99,9 +88,9 @@ func LoadTestWorkflow(ctx workflow.Context, req RunRequest) (string, error) {
 	logger.Info("Metrics extracted successfully", "runID", req.RunID, "metricCount", len(metrics))
 
 	// ============================================
-	// Step 6: Save Metrics to Database
+	// Step 5: Save Metrics to Database
 	// ============================================
-	logger.Info("Step 6: Saving metrics to database", "runID", req.RunID)
+	logger.Info("Step 5: Saving metrics to database", "runID", req.RunID)
 	err = workflow.ExecuteActivity(ctx, ActivitySaveMetricsToDb, metrics).Get(ctx, nil)
 	if err != nil {
 		logger.Error("Failed to save metrics to database", "error", err)
@@ -110,9 +99,9 @@ func LoadTestWorkflow(ctx workflow.Context, req RunRequest) (string, error) {
 	}
 
 	// ============================================
-	// Step 7: Save Log File Content to Database
+	// Step 6: Save Log File Content to Database
 	// ============================================
-	logger.Info("Step 7: Saving log file to database", "runID", req.RunID)
+	logger.Info("Step 6: Saving log file to database", "runID", req.RunID)
 	err = workflow.ExecuteActivity(ctx, ActivitySaveRunLogFile, req.RunID).Get(ctx, nil)
 	if err != nil {
 		logger.Error("Failed to save log file to database", "error", err)
@@ -121,9 +110,9 @@ func LoadTestWorkflow(ctx workflow.Context, req RunRequest) (string, error) {
 	}
 
 	// ============================================
-	// Step 8: Update Final Status
+	// Step 7: Update Final Status
 	// ============================================
-	logger.Info("Step 8: Updating final status", "runID", req.RunID)
+	logger.Info("Step 7: Updating final status", "runID", req.RunID)
 	err = workflow.ExecuteActivity(ctx, ActivityUpdateRunStatus, req.RunID, "completed").Get(ctx, nil)
 	if err != nil {
 		logger.Error("Failed to update final status", "error", err)

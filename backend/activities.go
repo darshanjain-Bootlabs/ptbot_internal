@@ -91,10 +91,30 @@ func ActivityProcessStream(ctx context.Context, req RunRequest, runnerURL string
 	logger := activity.GetLogger(ctx)
 	logger.Info("Processing stream from runner", "runID", req.RunID)
 
+	fileName := sanitizeRunID(req.RunID)
+	if fileName == "" {
+		fileName = "run_unknown"
+	}
+
+	if err := os.MkdirAll("results", 0755); err != nil {
+		logger.Error("Failed to ensure results directory", "error", err)
+		return nil, err
+	}
+
+	filePath := filepath.Join("results", fmt.Sprintf("%s.txt", fileName))
+	logFile, err := os.OpenFile(filePath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+	if err != nil {
+		logger.Error("Failed to open log file for streaming writes", "filePath", filePath, "error", err)
+		return nil, err
+	}
+	defer logFile.Close()
+
 	runnerPayload := struct {
+		RunID  string `json:"run_id"`
 		VUs    int    `json:"vus"`
 		Script string `json:"script"`
 	}{
+		RunID:  req.RunID,
 		VUs:    req.VUs,
 		Script: req.Script,
 	}
@@ -149,6 +169,15 @@ func ActivityProcessStream(ctx context.Context, req RunRequest, runnerURL string
 						stream = "stderr"
 					}
 
+					if _, writeErr := logFile.WriteString(fmt.Sprintf("[%s] [%s] %s\n", req.RunID, stream, data)); writeErr != nil {
+						logger.Error("Failed to append stream chunk to log file", "filePath", filePath, "error", writeErr)
+						return chunks, writeErr
+					}
+					if syncErr := logFile.Sync(); syncErr != nil {
+						logger.Error("Failed to sync log file", "filePath", filePath, "error", syncErr)
+						return chunks, syncErr
+					}
+
 					chunk := StreamChunk{
 						RunID:   req.RunID,
 						Message: data,
@@ -176,35 +205,7 @@ func ActivityProcessStream(ctx context.Context, req RunRequest, runnerURL string
 func ActivityWriteToLogFile(ctx context.Context, runID string, chunks []StreamChunk) error {
 	logger := activity.GetLogger(ctx)
 	logger.Info("Writing chunks to log file", "runID", runID, "chunkCount", len(chunks))
-
-	fileName := sanitizeRunID(runID)
-	if fileName == "" {
-		fileName = "run_unknown"
-	}
-
-	filePath := filepath.Join("results", fmt.Sprintf("%s.txt", fileName))
-
-	for _, chunk := range chunks {
-		line := strings.TrimSpace(chunk.Message)
-		if line == "" {
-			continue
-		}
-
-		file, err := os.OpenFile(filePath, os.O_APPEND|os.O_WRONLY, 0644)
-		if err != nil {
-			logger.Error("Failed to open log file for writing", "filePath", filePath, "error", err)
-			return err
-		}
-
-		_, err = file.WriteString(fmt.Sprintf("[%s] [%s] %s\n", chunk.RunID, chunk.Stream, line))
-		file.Close()
-		if err != nil {
-			logger.Error("Failed to write to log file", "error", err)
-			return err
-		}
-	}
-
-	logger.Info("Successfully wrote all chunks to log file", "filePath", filePath)
+	logger.Info("Skipping duplicate batch write because stream is already appended in real time", "runID", runID)
 	return nil
 }
 

@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"os/exec"
 	"sync"
 )
 
 // Request struct
 type TestRequest struct {
+	RunID  string `json:"run_id"`
 	VUs    int    `json:"vus"`
 	Script string `json:"script"`
 }
@@ -29,8 +31,8 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Script == "" || req.VUs <= 0 {
-		http.Error(w, "Invalid script or VUs", http.StatusBadRequest)
+	if req.RunID == "" || req.Script == "" || req.VUs <= 0 {
+		http.Error(w, "Invalid run_id, script or VUs", http.StatusBadRequest)
 		return
 	}
 
@@ -64,8 +66,16 @@ func handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Start k6
-	cmd := exec.Command("k6", "run", "-")
+	// Start k6 with Prometheus remote write output and run tag
+	cmd := exec.Command("k6", "run",
+		"--tag", "test_run_id="+req.RunID,
+		"-o", "experimental-prometheus-rw=http://prometheus:9090/api/v1/write",
+		"-",
+	)
+	cmd.Env = append(os.Environ(),
+		"K6_PROMETHEUS_RW_SERVER_URL=http://prometheus:9090/api/v1/write",
+		"K6_PROMETHEUS_RW_PUSH_INTERVAL=2s",
+	)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
